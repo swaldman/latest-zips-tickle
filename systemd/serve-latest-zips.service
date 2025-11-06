@@ -1,0 +1,17 @@
+[Unit]
+Description=Serve the latest zip file compiled in any of several directories
+After=syslog.target network.target
+
+[Service]
+Type=simple
+User=latest-zips
+Group=latest-zips
+WorkingDirectory=/opt/latest-zips-tickle
+
+ExecStart=/bin/bash -c "PATH=/usr/bin /opt/latest-zips-tickle/bin/serve-latest-zips"
+Restart=on-failure
+RestartSec=30s
+
+StandardError=journal
+StandardOutput=journal
+StandardInput=null

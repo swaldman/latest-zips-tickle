@@ -1,0 +1,54 @@
+#!/usr/bin/env -S scala-cli shebang --server=false
+
+//> using dep "com.mchange::latest:0.0.1"
+
+import java.time.{Instant,ZoneId}
+import java.time.format.DateTimeFormatter
+import scala.util.control.NonFatal
+
+import latest.LoggingApi.*
+
+given LogAdapter = logAdapterByFilename
+
+val port = 10201
+
+val zoneId = ZoneId.of("US/Eastern")
+
+// stuff stolen from zipper.scala
+// see https://github.com/swaldman/mchange-sysadmin-scripts/blob/mchange-specific/taskbin/zipper.scala
+val TimestampedRegex = """^(.+)(\-\-\d{4}\-\d{2}\-\d{2}\-\-\d{2}h\d{2}m\d{2}s)\.(.+)$""".r
+val TimestampFormatter = DateTimeFormatter.ofPattern("'--'yyyy'-'MM'-'dd'--'HH'h'mm'm'ss's'").withZone( zoneId )
+
+def byTimestampChooseLatest( base : String ) : IndexedSeq[os.Path] => Option[os.Path] = paths =>
+  given Ordering[os.Path] = Ordering.by( _.toString() )
+  val tups =
+    paths.flatMap: path =>
+      path.lastOpt match
+        case Some( fname ) =>
+          try
+            fname match
+              case TimestampedRegex( b, ts, sfx ) if b == base && sfx == "zip" =>
+                Some( Tuple2( Instant.from(TimestampFormatter.parse(ts)), path ) )
+              case _ =>
+                DEBUG.log( s"Unexpected filename syntax, excluded from potential latest: $path" )
+                None
+          catch
+            case NonFatal(t) =>
+              WARNING.log( s"Exception while examining '$path' for potential latest timestamp.", t )
+              None
+        case None =>
+              WARNING.log( s"No last segment of '$path'? How are we examining a root directory?" )
+              None
+  tups.sorted.lastOption.map( _(1) )
+
+def myConfig( base : String, zipDir : os.Path ) =
+  latest.Config( zipDir, chooseLatest=byTimestampChooseLatest(base) )
+
+val pathsToConfigs = Map(
+  ("drafts" :: "latest" :: Nil) -> myConfig( "drafts.interfluidity.com", os.Path("/home/web/meta/zip/drafts.interfluidity.com") ),
+  ("tech" :: "latest" :: Nil)   -> myConfig( "tech.interfluidity.com",   os.Path("/home/web/meta/zip/tech.interfluidity.com")   ),
+)
+
+latest.serve( port, pathsToConfigs, verbose = true )
+
+
